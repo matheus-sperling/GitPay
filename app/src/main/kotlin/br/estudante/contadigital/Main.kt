@@ -1,6 +1,7 @@
 package br.estudante.contadigital
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +27,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -46,6 +51,7 @@ private enum class Pessoa { FISICA, JURIDICA }
 private enum class Tela { LOGIN, CADASTRO, HOME, EXTRATO, INVESTIMENTOS, PERFIL }
 private enum class TipoOperacao { DEPOSITO, SAQUE, TRANSFERENCIA, INVESTIMENTO }
 
+// Confere os dígitos verificadores de CPF ou CNPJ antes de criar a conta.
 private fun documentoValido(pessoa: Pessoa, documento: String): Boolean {
     val digitos = documento.filter(Char::isDigit)
     if (digitos.isEmpty() || digitos.all { it == digitos.first() }) return false
@@ -72,15 +78,20 @@ private fun documentoValido(pessoa: Pessoa, documento: String): Boolean {
     }
 }
 
+// Aplica a validação mínima de formato usada pelos campos de e-mail.
 private fun emailValido(email: String): Boolean = email.trim().contains("@") && email.trim().contains(".")
 
+// Valida os dados editáveis do perfil antes de gravá-los na conta.
 private fun validarPerfil(nome: String, telefone: String, email: String) {
     require(nome.trim().length >= 3) { "Informe um nome válido." }
     require(telefone.trim().length >= 8) { "Informe um telefone válido." }
     require(emailValido(email)) { "Informe um e-mail válido." }
 }
 
+// Registra uma movimentação financeira realizada pela conta.
 private data class Operacao(val tipo: TipoOperacao, val valor: Double, val descricao: String, val data: LocalDateTime = LocalDateTime.now())
+
+// Guarda o produto, a taxa anual e o valor aplicado em um investimento.
 private data class Investimento(val produto: String, val taxa: Double, val valor: Double)
 
 // Modelo simples de conta digital. As listas guardam o extrato e as aplicações.
@@ -121,18 +132,36 @@ private class Sistema {
     fun excluir(conta: Conta) { contas.remove(conta) }
 }
 
+// Converte a senha em SHA-256 antes de armazená-la ou compará-la.
 private fun String.gerarHash(): String = MessageDigest.getInstance("SHA-256").digest(toByteArray()).joinToString("") { "%02x".format(it) }
+
+// Formata valores monetários seguindo o padrão brasileiro.
 private fun Double.emReais(): String = "R$ %.2f".format(Locale("pt", "BR"), this)
+
+// Formato usado para exibir data e hora no extrato.
 private val formato = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
 
+private val verdeClaro = lightColorScheme(
+    primary = Color(0xFF176B45),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFC7EBD6),
+    onPrimaryContainer = Color(0xFF062016),
+    secondary = Color(0xFF4D6354),
+    secondaryContainer = Color(0xFFD0E8D5),
+    background = Color(0xFFF7FBF7),
+    surface = Color.White,
+    error = Color(0xFFB3261E)
+)
+
 @Composable
+// Controla a navegação geral e mantém a conta atual enquanto a janela está aberta.
 fun Aplicacao() {
     val sistema = remember { Sistema() }
     var tela by remember { mutableStateOf(Tela.LOGIN) }
     var conta by remember { mutableStateOf<Conta?>(null) }
     var mensagem by remember { mutableStateOf("") }
 
-    MaterialTheme {
+    MaterialTheme(colorScheme = verdeClaro) {
         when (tela) {
             Tela.LOGIN -> Login({ documento, senha ->
                 conta = sistema.autenticar(documento, senha)
@@ -151,13 +180,15 @@ fun Aplicacao() {
 }
 
 @Composable
+// Centraliza formulários e permite rolagem quando a altura da janela é menor.
 private fun Centralizado(conteudo: @Composable () -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(36.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Column(Modifier.width(450.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { conteudo() }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Column(Modifier.fillMaxWidth().widthIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { conteudo() }
     }
 }
 
 @Composable
+// Exibe a entrada do sistema e encaminha o usuário para login ou cadastro.
 private fun Login(entrar: (String, String) -> Unit, cadastrar: () -> Unit, mensagem: String) {
     var documento by remember { mutableStateOf("") }
     var senha by remember { mutableStateOf("") }
@@ -174,6 +205,7 @@ private fun Login(entrar: (String, String) -> Unit, cadastrar: () -> Unit, mensa
 }
 
 @Composable
+// Coleta os dados de uma pessoa física ou jurídica e cria a conta local.
 private fun Cadastro(criar: (Pessoa, String, String, String, String, String, String) -> Unit, voltar: () -> Unit, mensagem: String) {
     var pessoa by remember { mutableStateOf(Pessoa.FISICA) }
     var nome by remember { mutableStateOf("") }
@@ -201,52 +233,102 @@ private fun Cadastro(criar: (Pessoa, String, String, String, String, String, Str
 }
 
 @Composable
+// Monta a estrutura responsiva da conta, com menu lateral ou menu rolável.
 private fun Principal(conta: Conta, sistema: Sistema, tela: Tela, navegar: (Tela) -> Unit, sair: () -> Unit, avisar: (String) -> Unit, mensagem: String) {
     Scaffold { padding ->
-        Row(Modifier.fillMaxSize().padding(padding).padding(22.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-            Column(Modifier.width(200.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Minha Conta", style = MaterialTheme.typography.headlineSmall)
-                Text("Nº ${conta.numero}")
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                listOf(Tela.HOME to "Resumo", Tela.EXTRATO to "Extrato", Tela.INVESTIMENTOS to "Investimentos", Tela.PERFIL to "Meu perfil").forEach { (destino, nome) ->
-                    if (tela == destino) Button({ navegar(destino) }, Modifier.fillMaxWidth()) { Text(nome) } else OutlinedButton({ navegar(destino) }, Modifier.fillMaxWidth()) { Text(nome) }
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+            val compacto = maxWidth < 820.dp
+            if (compacto) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Cabecalho(conta)
+                    MenuNavegacao(tela, navegar, sair)
+                    ConteudoPrincipal(conta, sistema, tela, avisar, mensagem, sair)
                 }
-                TextButton(sair) { Text("Sair") }
-            }
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                when (tela) {
-                    Tela.HOME -> Resumo(conta, sistema, avisar)
-                    Tela.EXTRATO -> Extrato(conta)
-                    Tela.INVESTIMENTOS -> Investimentos(conta, avisar)
-                    Tela.PERFIL -> Perfil(conta, sistema, sair, avisar)
-                    else -> Unit
+            } else {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                    Column(Modifier.widthIn(min = 180.dp, max = 220.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Cabecalho(conta)
+                        MenuNavegacao(tela, navegar, sair, vertical = true)
+                    }
+                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        ConteudoPrincipal(conta, sistema, tela, avisar, mensagem, sair)
+                    }
                 }
-                if (mensagem.isNotEmpty()) Text(mensagem, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
 }
 
 @Composable
+// Mostra a identificação da conta no topo da navegação.
+private fun Cabecalho(conta: Conta) {
+    Text("Minha Conta", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+    Text("Conta nº ${conta.numero}", style = MaterialTheme.typography.labelLarge)
+}
+
+@Composable
+// Renderiza os botões de navegação na orientação adequada ao tamanho da janela.
+private fun MenuNavegacao(tela: Tela, navegar: (Tela) -> Unit, sair: () -> Unit, vertical: Boolean = false) {
+    val modifier = if (vertical) Modifier else Modifier.horizontalScroll(rememberScrollState())
+    val itens = listOf(Tela.HOME to "Resumo", Tela.EXTRATO to "Extrato", Tela.INVESTIMENTOS to "Investimentos", Tela.PERFIL to "Meu perfil")
+    if (vertical) {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            itens.forEach { (destino, nome) ->
+                if (tela == destino) Button({ navegar(destino) }, Modifier.fillMaxWidth()) { Text(nome) } else OutlinedButton({ navegar(destino) }, Modifier.fillMaxWidth()) { Text(nome) }
+            }
+            TextButton(sair) { Text("Sair") }
+        }
+    } else Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        itens.forEach { (destino, nome) ->
+            if (tela == destino) Button({ navegar(destino) }) { Text(nome) } else OutlinedButton({ navegar(destino) }) { Text(nome) }
+        }
+        TextButton(sair) { Text("Sair") }
+    }
+}
+
+@Composable
+// Seleciona a tela ativa e mostra mensagens de operação ao usuário.
+private fun ConteudoPrincipal(conta: Conta, sistema: Sistema, tela: Tela, avisar: (String) -> Unit, mensagem: String, sair: () -> Unit) {
+    when (tela) {
+        Tela.HOME -> Resumo(conta, sistema, avisar)
+        Tela.EXTRATO -> Extrato(conta)
+        Tela.INVESTIMENTOS -> Investimentos(conta, avisar)
+        Tela.PERFIL -> Perfil(conta, sistema, sair, avisar)
+        else -> Unit
+    }
+    if (mensagem.isNotEmpty()) Text(mensagem, color = MaterialTheme.colorScheme.primary)
+}
+
+@Composable
+// Apresenta saldo, ações financeiras e as operações mais recentes.
 private fun Resumo(conta: Conta, sistema: Sistema, avisar: (String) -> Unit) {
     Text("Olá, ${conta.nome}", style = MaterialTheme.typography.headlineMedium)
-    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp)) { Text("Saldo disponível"); Text(conta.saldo.emReais(), style = MaterialTheme.typography.displaySmall) } }
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Acao("Depositar") { valor -> if (valor > 0) { conta.saldo += valor; conta.operacoes.add(Operacao(TipoOperacao.DEPOSITO, valor, "Depósito")); avisar("Depósito realizado.") } else avisar("Valor inválido.") }
-        Acao("Sacar") { valor -> if (valor > 0 && conta.saldo >= valor) { conta.saldo -= valor; conta.operacoes.add(Operacao(TipoOperacao.SAQUE, valor, "Saque")); avisar("Saque realizado.") } else avisar("Saldo insuficiente.") }
-        Transferencia(conta, sistema, avisar)
+    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp)) { Text("Saldo disponível", style = MaterialTheme.typography.titleMedium); Text(conta.saldo.emReais(), style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary) } }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 760.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Acao("Depositar") { valor -> if (valor > 0) { conta.saldo += valor; conta.operacoes.add(Operacao(TipoOperacao.DEPOSITO, valor, "Depósito")); avisar("Depósito realizado.") } else avisar("Valor inválido.") }
+                Acao("Sacar") { valor -> if (valor > 0 && conta.saldo >= valor) { conta.saldo -= valor; conta.operacoes.add(Operacao(TipoOperacao.SAQUE, valor, "Saque")); avisar("Saque realizado.") } else avisar("Saldo insuficiente.") }
+                Transferencia(conta, sistema, avisar)
+            }
+        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Acao("Depositar") { valor -> if (valor > 0) { conta.saldo += valor; conta.operacoes.add(Operacao(TipoOperacao.DEPOSITO, valor, "Depósito")); avisar("Depósito realizado.") } else avisar("Valor inválido.") }
+            Acao("Sacar") { valor -> if (valor > 0 && conta.saldo >= valor) { conta.saldo -= valor; conta.operacoes.add(Operacao(TipoOperacao.SAQUE, valor, "Saque")); avisar("Saque realizado.") } else avisar("Saldo insuficiente.") }
+            Transferencia(conta, sistema, avisar)
+        }
     }
     Text("Últimas operações", style = MaterialTheme.typography.titleLarge)
     conta.operacoes.takeLast(4).reversed().forEach { Linha(it) }
 }
 
 @Composable
+// Processa transferências internas e externas com banco selecionável.
 private fun Transferencia(conta: Conta, sistema: Sistema, avisar: (String) -> Unit) {
     var destino by remember { mutableStateOf("") }
     var texto by remember { mutableStateOf("") }
     var bancoAberto by remember { mutableStateOf(false) }
     var bancoSelecionado by remember { mutableStateOf(sistema.bancosExternos.first()) }
-    Column(Modifier.width(210.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Column(Modifier.fillMaxWidth().widthIn(min = 210.dp, max = 360.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text("Transferir", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(destino, { destino = it }, label = { Text("Conta destino") })
         OutlinedTextField(texto, { texto = it }, label = { Text("Valor") })
@@ -277,9 +359,10 @@ private fun Transferencia(conta: Conta, sistema: Sistema, avisar: (String) -> Un
 }
 
 @Composable
+// Renderiza um campo de valor reutilizável para depósito ou saque.
 private fun Acao(nome: String, executar: (Double) -> Unit) {
     var texto by remember { mutableStateOf("") }
-    Column(Modifier.width(180.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Column(Modifier.fillMaxWidth().widthIn(min = 180.dp, max = 260.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(nome, style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(texto, { texto = it }, label = { Text("Valor") })
         Button({ executar(texto.replace(',', '.').toDoubleOrNull() ?: 0.0) }) { Text("Confirmar") }
@@ -287,6 +370,7 @@ private fun Acao(nome: String, executar: (Double) -> Unit) {
 }
 
 @Composable
+// Filtra e apresenta o histórico de operações por período.
 private fun Extrato(conta: Conta) {
     var inicio by remember { mutableStateOf("") }
     var fim by remember { mutableStateOf("") }
@@ -298,14 +382,20 @@ private fun Extrato(conta: Conta) {
     }
     Text("Extrato", style = MaterialTheme.typography.headlineMedium)
     Text("Saldo atual: ${conta.saldo.emReais()}")
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(inicio, { inicio = it }, label = { Text("Início dd/mm/aaaa") })
-        OutlinedTextField(fim, { fim = it }, label = { Text("Fim dd/mm/aaaa") })
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 560.dp) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(inicio, { inicio = it }, label = { Text("Início dd/mm/aaaa") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(fim, { fim = it }, label = { Text("Fim dd/mm/aaaa") }, modifier = Modifier.fillMaxWidth())
+        } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(inicio, { inicio = it }, label = { Text("Início dd/mm/aaaa") }, modifier = Modifier.weight(1f))
+            OutlinedTextField(fim, { fim = it }, label = { Text("Fim dd/mm/aaaa") }, modifier = Modifier.weight(1f))
+        }
     }
-    if (filtradas.isEmpty()) Text("Nenhuma operação neste período.") else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(filtradas) { Linha(it) } }
+    if (filtradas.isEmpty()) Text("Nenhuma operação neste período.") else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { filtradas.forEach { Linha(it) } }
 }
 
 @Composable
+// Exibe uma operação individual com descrição, data e valor.
 private fun Linha(operacao: Operacao) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Column { Text(operacao.descricao); Text(operacao.data.format(formato), style = MaterialTheme.typography.bodySmall) }
@@ -314,55 +404,63 @@ private fun Linha(operacao: Operacao) {
 }
 
 @Composable
+// Permite escolher um produto de investimento e mostra a estimativa anual.
 private fun Investimentos(conta: Conta, avisar: (String) -> Unit) {
     var aberto by remember { mutableStateOf(false) }
     var produto by remember { mutableStateOf("CDB - 10% ao ano") }
     var texto by remember { mutableStateOf("") }
     Text("Investimentos", style = MaterialTheme.typography.headlineMedium)
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Column {
-            OutlinedButton({ aberto = true }) { Text(produto) }
-            DropdownMenu(aberto, { aberto = false }) { listOf("CDB - 10% ao ano", "Poupança - 6% ao ano", "Fundo - 12% ao ano").forEach { item -> DropdownMenuItem({ Text(item) }, { produto = item; aberto = false }) } }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val controles = @Composable {
+            Column(Modifier.fillMaxWidth().widthIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton({ aberto = true }, Modifier.fillMaxWidth()) { Text(produto) }
+                OutlinedTextField(texto, { texto = it }, label = { Text("Valor") }, modifier = Modifier.fillMaxWidth())
+                Button({
+                    val valor = texto.replace(',', '.').toDoubleOrNull() ?: 0.0
+                    if (valor > 0 && conta.saldo >= valor) {
+                        val taxa = if (produto.contains("10%")) .10 else if (produto.contains("6%")) .06 else .12
+                        conta.saldo -= valor
+                        conta.investimentos.add(Investimento(produto.substringBefore(" -"), taxa, valor))
+                        conta.operacoes.add(Operacao(TipoOperacao.INVESTIMENTO, valor, "Aplicação em ${produto.substringBefore(" -")}"))
+                        avisar("Investimento criado.")
+                    } else avisar("Saldo insuficiente ou valor inválido.")
+                }, Modifier.fillMaxWidth()) { Text("Aplicar") }
+            }
         }
-        OutlinedTextField(texto, { texto = it }, label = { Text("Valor") })
-        Button({
-            val valor = texto.replace(',', '.').toDoubleOrNull() ?: 0.0
-            if (valor > 0 && conta.saldo >= valor) {
-                val taxa = if (produto.contains("10%")) .10 else if (produto.contains("6%")) .06 else .12
-                conta.saldo -= valor
-                conta.investimentos.add(Investimento(produto.substringBefore(" -"), taxa, valor))
-                conta.operacoes.add(Operacao(TipoOperacao.INVESTIMENTO, valor, "Aplicação em ${produto.substringBefore(" -")}"))
-                avisar("Investimento criado.")
-            } else avisar("Saldo insuficiente ou valor inválido.")
-        }) { Text("Aplicar") }
+        if (maxWidth < 560.dp) controles() else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { controles() }
     }
+    DropdownMenu(aberto, { aberto = false }) { listOf("CDB - 10% ao ano", "Poupança - 6% ao ano", "Fundo - 12% ao ano").forEach { item -> DropdownMenuItem({ Text(item) }, { produto = item; aberto = false }) } }
     conta.investimentos.forEach { app -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) { Text(app.produto); Text("Aplicado: ${app.valor.emReais()} | Taxa: ${(app.taxa * 100).toInt()}% ao ano"); Text("Estimativa em 1 ano: ${(app.valor * (1 + app.taxa)).emReais()}") } } }
 }
 
 @Composable
+// Permite editar dados pessoais ou excluir a conta atual.
 private fun Perfil(conta: Conta, sistema: Sistema, sair: () -> Unit, avisar: (String) -> Unit) {
     var nome by remember(conta) { mutableStateOf(conta.nome) }
     var telefone by remember(conta) { mutableStateOf(conta.telefone) }
     var email by remember(conta) { mutableStateOf(conta.email) }
     Text("Meus dados", style = MaterialTheme.typography.headlineMedium)
     Text("Documento: ${conta.documento} | Conta: ${conta.numero}")
-    OutlinedTextField(nome, { nome = it }, label = { Text("Nome") })
-    OutlinedTextField(telefone, { telefone = it }, label = { Text("Telefone") })
-    OutlinedTextField(email, { email = it }, label = { Text("E-mail") })
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button({
-            try {
-                validarPerfil(nome, telefone, email)
-                conta.nome = nome.trim()
-                conta.telefone = telefone.trim()
-                conta.email = email.trim()
-                avisar("Dados salvos.")
-            } catch (erro: IllegalArgumentException) {
-                avisar(erro.message ?: "Confira os dados.")
-            }
-        }) { Text("Salvar") }
-        OutlinedButton({ sistema.excluir(conta); sair() }) { Text("Excluir conta") }
+    Column(Modifier.fillMaxWidth().widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(nome, { nome = it }, label = { Text("Nome") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(telefone, { telefone = it }, label = { Text("Telefone") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(email, { email = it }, label = { Text("E-mail") }, modifier = Modifier.fillMaxWidth())
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button({
+                try {
+                    validarPerfil(nome, telefone, email)
+                    conta.nome = nome.trim()
+                    conta.telefone = telefone.trim()
+                    conta.email = email.trim()
+                    avisar("Dados salvos.")
+                } catch (erro: IllegalArgumentException) {
+                    avisar(erro.message ?: "Confira os dados.")
+                }
+            }) { Text("Salvar") }
+            OutlinedButton({ sistema.excluir(conta); sair() }) { Text("Excluir conta") }
+        }
     }
 }
 
+// Inicia a janela desktop e conecta o conteúdo principal ao ciclo de vida da aplicação.
 fun main() = application { Window(onCloseRequest = ::exitApplication, title = "Minha Conta") { Aplicacao() } }

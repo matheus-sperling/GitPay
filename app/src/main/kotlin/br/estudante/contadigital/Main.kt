@@ -44,6 +44,40 @@ private enum class Pessoa { FISICA, JURIDICA }
 private enum class Tela { LOGIN, CADASTRO, HOME, EXTRATO, INVESTIMENTOS, PERFIL }
 private enum class TipoOperacao { DEPOSITO, SAQUE, TRANSFERENCIA, INVESTIMENTO }
 
+private fun documentoValido(pessoa: Pessoa, documento: String): Boolean {
+    val digitos = documento.filter(Char::isDigit)
+    if (digitos.isEmpty() || digitos.all { it == digitos.first() }) return false
+    return when (pessoa) {
+        Pessoa.FISICA -> {
+            if (digitos.length != 11) return false
+            val somaPrimeiro = (0..8).sumOf { indice -> (digitos[indice] - '0') * (10 - indice) }
+            val primeiroDigito = (somaPrimeiro * 10 % 11) % 10
+            val somaSegundo = (0..9).sumOf { indice -> (digitos[indice] - '0') * (11 - indice) }
+            val segundoDigito = (somaSegundo * 10 % 11) % 10
+            digitos[9] - '0' == primeiroDigito && digitos[10] - '0' == segundoDigito
+        }
+        Pessoa.JURIDICA -> {
+            if (digitos.length != 14) return false
+            val pesosPrimeiro = intArrayOf(5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+            val pesosSegundo = intArrayOf(6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+            fun calcularDigito(pesos: IntArray): Int {
+                val soma = pesos.indices.sumOf { indice -> (digitos[indice] - '0') * pesos[indice] }
+                val resto = soma % 11
+                return if (resto < 2) 0 else 11 - resto
+            }
+            digitos[12] - '0' == calcularDigito(pesosPrimeiro) && digitos[13] - '0' == calcularDigito(pesosSegundo)
+        }
+    }
+}
+
+private fun emailValido(email: String): Boolean = email.trim().contains("@") && email.trim().contains(".")
+
+private fun validarPerfil(nome: String, telefone: String, email: String) {
+    require(nome.trim().length >= 3) { "Informe um nome válido." }
+    require(telefone.trim().length >= 8) { "Informe um telefone válido." }
+    require(emailValido(email)) { "Informe um e-mail válido." }
+}
+
 private data class Operacao(val tipo: TipoOperacao, val valor: Double, val descricao: String, val data: LocalDateTime = LocalDateTime.now())
 private data class Investimento(val produto: String, val taxa: Double, val valor: Double)
 
@@ -71,8 +105,9 @@ private class Sistema {
 
     fun cadastrar(pessoa: Pessoa, nome: String, documento: String, telefone: String, email: String, detalhe: String, senha: String): Conta {
         require(nome.trim().length >= 3) { "Informe um nome válido." }
-        require(documento.trim().length >= 5) { "Informe um CPF ou CNPJ válido." }
-        require(email.contains("@")) { "Informe um e-mail válido." }
+        require(documentoValido(pessoa, documento)) { "Informe um CPF ou CNPJ válido." }
+        require(telefone.trim().length >= 8) { "Informe um telefone válido." }
+        require(emailValido(email)) { "Informe um e-mail válido." }
         require(detalhe.trim().isNotEmpty()) { "Preencha o campo complementar." }
         require(senha.length >= 4) { "A senha deve ter pelo menos 4 caracteres." }
         require(contas.none { it.documento == documento.trim() }) { "Este CPF/CNPJ já está cadastrado." }
@@ -207,10 +242,18 @@ private fun Resumo(conta: Conta, sistema: Sistema, avisar: (String) -> Unit) {
 private fun Transferencia(conta: Conta, sistema: Sistema, avisar: (String) -> Unit) {
     var destino by remember { mutableStateOf("") }
     var texto by remember { mutableStateOf("") }
+    var bancoAberto by remember { mutableStateOf(false) }
+    var bancoSelecionado by remember { mutableStateOf(sistema.bancosExternos.first()) }
     Column(Modifier.width(210.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text("Transferir", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(destino, { destino = it }, label = { Text("Conta destino") })
         OutlinedTextField(texto, { texto = it }, label = { Text("Valor") })
+        OutlinedButton({ bancoAberto = true }) { Text(bancoSelecionado) }
+        DropdownMenu(bancoAberto, { bancoAberto = false }) {
+            sistema.bancosExternos.forEach { banco ->
+                DropdownMenuItem({ Text(banco) }, { bancoSelecionado = banco; bancoAberto = false })
+            }
+        }
         Button({
             val valor = texto.replace(',', '.').toDoubleOrNull() ?: 0.0
             val outraConta = sistema.procurar(destino)
@@ -224,7 +267,7 @@ private fun Transferencia(conta: Conta, sistema: Sistema, avisar: (String) -> Un
                 avisar("Transferência interna realizada.")
             } else {
                 conta.saldo -= valor
-                conta.operacoes.add(Operacao(TipoOperacao.TRANSFERENCIA, valor, "Transferência externa para ${sistema.bancosExternos[0]}"))
+                conta.operacoes.add(Operacao(TipoOperacao.TRANSFERENCIA, valor, "Transferência externa para $bancoSelecionado"))
                 avisar("Transferência externa simulada.")
             }
         }) { Text("Enviar") }
@@ -305,7 +348,17 @@ private fun Perfil(conta: Conta, sistema: Sistema, sair: () -> Unit, avisar: (St
     OutlinedTextField(telefone, { telefone = it }, label = { Text("Telefone") })
     OutlinedTextField(email, { email = it }, label = { Text("E-mail") })
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button({ conta.nome = nome; conta.telefone = telefone; conta.email = email; avisar("Dados salvos.") }) { Text("Salvar") }
+        Button({
+            try {
+                validarPerfil(nome, telefone, email)
+                conta.nome = nome.trim()
+                conta.telefone = telefone.trim()
+                conta.email = email.trim()
+                avisar("Dados salvos.")
+            } catch (erro: IllegalArgumentException) {
+                avisar(erro.message ?: "Confira os dados.")
+            }
+        }) { Text("Salvar") }
         OutlinedButton({ sistema.excluir(conta); sair() }) { Text("Excluir conta") }
     }
 }
